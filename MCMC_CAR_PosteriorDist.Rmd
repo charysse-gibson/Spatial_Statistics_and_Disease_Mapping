@@ -1,0 +1,285 @@
+---
+title: 'MCMC_CAR_PosteriorDist'
+author: "Charysse Gibson"
+date: "May 4, 2020"
+output:
+  pdf_document: default
+  html_document:
+    df_print: paged
+---
+
+```{r setup, include=FALSE}
+library( tigris )
+library( sp )
+library( ggplot2 )
+library( ggthemes )
+library( tmap )
+library(tmaptools)
+library( dplyr )
+library( tidyverse )
+library( sf )
+library( GISTools )
+library( spdep )
+library( SpatialEpi )
+library( rgeos )
+library( nimble )
+
+setwd("C:/Users/chary/OneDrive/Documents/SLU/Sping 2020/BST 6200 spatial Statistics and Disease Mapping/R Scripts/")
+source("DBDA2E-utilities.R")  ## Set of utilities written by John Kruschke ## 
+
+Sys.setenv(PATH = paste("C:/Rtools/bin", Sys.getenv("PATH"), sep=";"))
+Sys.setenv(BINPREF = "C:/Rtools/mingw_64/bin/")
+```
+
+## Smoking and Pancreatic Cancer in Minnesota
+
+The pancreas is an organ in the abdomen located behind the lower part of the stomach in front of the spine. It is responsible for the release of enzymes that aid in digestion and regulating hormones to control blood sugar in the body. Pancreatic cancer occurs when cancerous cells form in the tissues of the pancreas. A major modifiable health risk factor of pancreatic cancer is smoking. 
+
+More information can be found at [\underline{Panceatic Cancer Risk Factors - American Cancer Society}](https://www.cancer.org/cancer/pancreatic-cancer/causes-risks-prevention/risk-factors.html)
+
+Data on counties in Minnesota was collected to understand the relationship between pancreatic cancer and tobacco use in the state. The number of pancreatic cancer cases and population sizes for counties was collected from the [Minnesota Department of Health]. County percentages of adults reporting as current smokers was collected from County Health Ranking & Roadmaps.
+
+Chloropleth maps were produced to show pancreatic cancer and smoking rates among Minnsotan counties across the states. Next, Moran's I and Monte-Carlo simulation of Moran's I were computed to measure spatial autocorrelation for understanding risk factor similarities in county locations. Lastly, a conditonal autoregressive (CAR) regression model was used to examine the relationship between county stroke mortality rates and adult smoking percentages. 
+
+```{r Chloropleth Map 1, echo=FALSE, message=FALSE, results=FALSE, warning=FALSE}
+
+# import datasets
+MN <- counties("Minnesota" , cb=TRUE )
+MNPancreas <- read.csv("C:/Users/chary/OneDrive/Documents/SLU/Sping 2020/BST 6200 spatial Statistics and Disease Mapping/Homework/HW4_data/MNPancreas.csv")
+MNSmoking <- read.csv("C:/Users/chary/OneDrive/Documents/SLU/Sping 2020/BST 6200 spatial Statistics and Disease Mapping/Homework/HW4_data/minnesota_adult_smoking.csv")
+
+MN@data <-
+  left_join(x=MN@data,y=MNPancreas,by=c('NAME'='location'))
+MN@data <-
+  rename(MN@data, pancreas_count=count)
+MN@data$pancreas_rate <- 
+  MN@data$pancreas_count/MN@data$population*100000
+
+MN@data <-
+  left_join(x=MN@data,y=MNSmoking,by=c('NAME'='County'))
+MN@data <-
+  rename(MN@data, smoking=Value)
+MN@data$smoking <- 
+  MN@data$smoking*100
+
+MN.sf = st_as_sf( MN )
+
+tm_shape( MN.sf ) +
+  tm_fill(col="pancreas_rate", title = "Pancreas Cancer Rate per 100,000", style="quantile")+
+  tm_borders(col="black")
+
+```
+
+### Figure 1: Chloropleth map of Minnesota county pancreatic cancer rates per 100,000 population
+
+The map in Figure 1 shows pancreatic cancer rates per 100,000 population for counties in the state of Minnesota. The highest rates among the state are seen in bordering and centrally clustered counties. Counties with the lowest rate are clustered around the Twin Cities, Minneapolis and St. Paul in Hennepin county. Other counties with lowest rates are spread further throughout the state.
+
+```{r Chloropleth Map 2, echo=FALSE, message=FALSE, results=FALSE}
+
+tm_shape( MN.sf ) +
+  tm_fill(col="smoking", title = "% Smokers", style="fixed", breaks=seq(10,26,2)) +
+  tm_borders(col="black")
+
+```
+
+### Figure 2: Chloropleth map of Minnesota county percentages of adults reporting as current smokers
+
+The map in Figure 2 shows smoking rates for counties. Higher percentages of adults reporting as current smokers is seen in counties north of Hennepin county. The highest smoking rate was reported in Mahnomen county.
+
+
+\newpage
+
+
+## Moran's I and Monte Carlo Simulation of Moran's I
+
+Moran's I and Monte Carlo simulations of Moran's I were used to assess spatial autocorrelation in pancreas cancer and smoking rates in Minnesotan counties.
+
+```{r Morans I Pancreas Cancer, echo=FALSE, message=FALSE, results=TRUE}
+
+MN.nb = poly2nb( MN.sf )
+MN.net = nb2lines(MN.nb, coords=coordinates(MN))
+MN.lw = nb2listw( MN.nb )
+
+MN.pancreas.moran.test = moran.test( MN.sf$pancreas_rate, MN.lw )
+print( MN.pancreas.moran.test )
+
+# Monte Carlo Simulation of Moran's I
+MN.pancreas.moran.sim = moran.mc( MN.sf$pancreas_rate, MN.lw , 99999 )
+# str( MN.pancreas.moran.sim )
+simulated.I = MN.pancreas.moran.sim$res
+
+# histogram of simulation
+hist( simulated.I , xlim=c(-0.5,0.5) , breaks=seq(-0.5,0.5,0.01) , col="blue", xlab = 'Simulated Moran\'s I', main='Monte Carlo Simulation for Moran\'s I')
+abline( v=MN.pancreas.moran.sim$statistic, col='red' )
+
+```
+
+### Figure 3: Monte Carlo Simulation of Moran's I for Pancreas Cancer Rates
+
+Moran's I for pancreas cancer rates among Minnesotan counties show significant positive spatial autocorrelation (I = 0.118, p = <.05) as similiar values are clustered together. A Monte Carlo simulation of Moran's I, in figure 3, also shows that Moran's I for county pancreas cancer rates is closer to the right tail of the the Monte Carlo simulated distribution. 
+
+```{r Morans I Smoking, echo=FALSE, message=FALSE, Results=TRUE}
+
+MN.smoking.moran.test = moran.test( MN.sf$smoking , MN.lw )
+print( MN.smoking.moran.test )
+
+# Monte Carlo Simulation of Moran's I
+MN.smoking.moran.sim = moran.mc( MN.sf$smoking , MN.lw , 99999 )
+# str( MN.smoking.moran.sim )
+simulated.I = MN.smoking.moran.sim$res
+
+# histogram of simulation
+hist( simulated.I , xlim=c(-0.5,0.5) , breaks=seq(-0.5,0.5,0.01) , col="blue", xlab = 'Simulated Moran\'s I', main='Monte Carlo Simulation for Moran\'s I')
+abline( v=MN.smoking.moran.sim$statistic, col='red')
+
+```
+
+### Figure 4: Monte Carlo Simulation of Moran's I for Smoking Rates
+
+Moran's I for smoking rates among Minnesotan counties show significant positive spatial autocorrelation (I = 0.310, p = <.01) as similiar values are clustered together. A Monte Carlo simulation of Moran's I, in figure 4, also shows that Moran's I for county smoking rates could not have come from the Monte Carlo simulation distribution. 
+
+
+\newpage
+
+
+## Conditional Autoregressive (CAR) Regression Model 
+
+A conditional autogressive (CAR) regression model was used to see if smoking rates was a significant predictor of pancreas cancer rates for counties in Minnesota. 
+
+```{r Regression Model, echo=FALSE, message=FALSE, Results=FALSE, warning=FALSE, include=FALSE}
+
+k = nrow( MN )
+
+num = rep(0,k)
+for (i in 1:k) num[i] = length( MN.lw$neighbours[[i]] )
+
+adj = c()
+for (i in 1:k) adj = c(adj,MN.lw$neighbours[[i]] )
+
+L = length(adj)
+
+MN.Code = nimbleCode({
+  alpha ~ dflat()
+  beta ~ dnorm( 0 , 0.001)
+  tau ~ dgamma( 1 , 0.001 )
+  tau1 ~ dgamma( 1 , 0.001 )
+  for (i in 1:L)
+    weights[i]  <-  1
+  s[1:k] ~ dcar_normal(adj[1:L],weights[1:L],num[1:k],tau,zero_mean=1)
+  for (i in 1:k) {
+    log(theta[i])  <-  alpha + beta*x[i] + s[i] + v[i]
+    y[i] ~ dpois( p[i]*theta[i] )
+    v[i] ~ dnorm( 0 , tau1 )
+  }  
+})
+
+MN.constants = list( k=k, L=L, num=num, adj=adj, p=MN$population,
+                     x=MN$smoking)
+MN.data = list( y=MN.sf$pancreas_count )
+MN.inits = list( alpha=0 , beta=0 , tau=1 , s=rep(0,k) , tau1=1 )
+
+MN.spatial.model = nimbleModel( code=MN.Code , 
+                                constants=MN.constants , 
+                                data=MN.data ,
+                                inits=MN.inits )
+
+compile.MN.spatial.model = compileNimble( MN.spatial.model)
+
+MN.spatial.model.Conf = configureMCMC( MN.spatial.model , print = TRUE )
+
+MN.spatial.model.Conf$addMonitors(c("alpha","beta","tau","tau1","theta"))
+
+MN.spatial.model.MCMC = buildMCMC( MN.spatial.model.Conf )
+
+compile.MN.spatial.model.MCMC = compileNimble( MN.spatial.model.MCMC )
+
+niter = 110000
+nburn =  10000
+set.seed(1)
+
+samples.spatial = runMCMC( compile.MN.spatial.model.MCMC, niter = niter, 
+                           nburnin = nburn, inits = MN.inits, nchains = 1, 
+                           samplesAsCodaMCMC = TRUE )
+
+# trace plots
+samples1 = samples.spatial
+par(mfrow = c(3, 2), mai = c(.6, .5, .4, .1), mgp = c(1.8, 0.7, 0))
+ts.plot(samples1[ , 'alpha'], xlab = 'iteration', col="red" , lwd=1.5 ,
+        ylab = expression(alpha), main = expression(alpha))
+ts.plot(samples1[ , 'beta'], xlab = 'iteration', col="darkgreen" , lwd=1.5 ,
+        ylab = expression(beta), main = expression(beta))
+ts.plot(samples1[ , 'tau'], xlab = 'iteration', col="blue" , lwd=1.5 ,
+        ylab = expression(tau), main = expression(tau))
+ts.plot(samples1[ , 'tau1'], xlab = 'iteration', col="blue" , lwd=1.5 ,
+        ylab = expression(tau[1]), main = expression(tau[1]))
+ts.plot(samples1[ , 'theta[1]'], xlab = 'iteration', col="blue" , lwd=1.5 ,
+        ylab = expression(theta[1]), main = expression(theta[1]))
+ts.plot(samples1[ , 'theta[2]'], xlab = 'iteration', col="blue" , lwd=1.5 ,
+        ylab = expression(theta[2]), main = expression(theta[2]))
+
+```
+
+### Figure 5: Trace Plots for Alpha, Beta, Tau, Tau[1], Theta[1], and Theta[2]
+
+The trace plots in Figure 5 show random stable noise.
+
+```{r CAR Reg Mod Chloropleth Map, echo=FALSE, message=FALSE, Results=FALSE}
+
+theta.HB.spatialB = apply( samples1[,5:91] , 2 , mean )
+MN$HB.spatialB.est.rate = theta.HB.spatialB
+
+# Chloropleth Map of Pancreas Cancer Rates from CAR Regression Model (s and v)
+tm_shape( MN ) +
+  tm_polygons( col="HB.spatialB.est.rate" , border.col="black", title="HB spatialB est rate", 
+               breaks = seq(0,.0003,.00005)) +
+  tm_text( "NAME" , size=0.6 , col="black", remove.overlap = TRUE ) 
+
+```
+
+### Figure 6: Pancreas Cancer Rates from CAR Regression Model (s and v)
+
+The chlorpleth map in Figure 6 showes smoother changes in values across the state compared to Figure 1 without the CAR regression model. Higher values can be seen in southern counties than previously seen in Figure 1.
+
+```{r Tau vs Tau1 Log-log Scale, echo=FALSE, message=FALSE, Results=FALSE}
+
+tauSample = samples1[,"tau"]
+tau1Sample = samples1[,"tau1"]
+plot( as.numeric(tauSample) , as.numeric(tau1Sample) , pch="." , log="xy" )
+
+```
+
+### Figure 7 : Tau vs Tau[1] (Log-log Scale) 
+
+Figure 7 shows that values are spread out but do stablize and concentrate.
+
+```{r Tau vs Tau1 Linear Scale, echo=FALSE, message=FALSE, Results=FALSE}
+
+plot( as.numeric(tauSample) , as.numeric(tau1Sample) , pch="." )
+
+```
+
+### Figure 8 : Tau vs Tau[1] (Linear Scale) 
+
+Figure 8 dispays total variability and an inverse relationship. 
+
+```{r Histogram of Posterior Distribution for Beta , echo=FALSE, message=FALSE, Results=FALSE}
+
+brks = seq(-0.7,0.7,0.05)
+hist( samples1[,"beta"] , breaks=brks )
+
+```
+
+### Figure 9 : Histogram of Posterior Distribution for Beta
+
+The histogram in Figure 9 shows a right-skewed posterior distribution for Beta. The highest frequencies are around 0. 
+
+```{r Posterior Distribution for Beta with 95 percent HDI , echo=FALSE, message=FALSE, Results=TRUE}
+
+plotPost( samples1[,"beta"] , main="Posterior of beta")
+HDIofMCMC( samples1[,"beta"] )
+
+```
+
+### Figure 10 : Posterior Distirbution of beta with 95% Highest Density Interval 
+
+The credible interval for Beta is [-0.23607274,  0.04423452]. The null hypothesis, that Beta is equal to 0, cannot be rejected as 0 is included in the 95% Highest Density Interval. Therefore, smoking rate are not a significant predictor of pancreatic cancer rates for coutnies in Minnesota in the model.

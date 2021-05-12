@@ -1,0 +1,256 @@
+---
+title: "NNI_IDW_Kriging_ContourPlots"
+author: "Charysse Gibson"
+date: "April 8, 2020"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+library( plot3D )
+library(deldir)
+library(sp)
+library(gstat)
+library(tmap)
+library(GISTools)
+library(RColorBrewer)
+library( maptools )
+```
+
+Data was collected in the Great Smokey Mountain National Park on Ph in soil samples. The following spatial statistics methods are used to explore and understand patterns in the data. 
+
+## Nearest Neighbor Interpolation (using Voronoi Polygons)
+
+The figures below utilize the nearest neighbor interpolation method that uses Voronoi polygons to indicate soil pH for points within each polygon area. Common classes for soil pH are as follows: 
+
+* Extremely acid 3.5 - 4.4
+* Very strongly acid 4.5 - 5.0
+* Strongly acid 5.1 - 5.5
+* Moderately acid 5.6 - 6.0
+* Slightly acid 6.1 - 6.5
+* Neutral 6.6 - 7.3
+* Slightly alkaline 7.4 - 7.8
+* Moderately alkaline 7.9 - 8.4
+* Strongly alkaline 8.5 - 9.0
+
+For more information on soil pH, please use this link: [\underline{USDA Soil Quality Indicators, pH}](https://www.nrcs.usda.gov/Internet/FSE_DOCUMENTS/nrcs142p2_052208.pdf)
+
+A sample of the SmokeyMountain.csv data is given below:
+
+```{r nearest neighbor interpolation, echo=FALSE, message=FALSE}
+
+SmokeyMountain <- read.csv('C:/Users/gibsonck/OneDrive/Documents/SLU/BST 6200 spatial Statistics and Disease Mapping/Homework/HW3_data/SmokeyMountain.csv')
+
+head(SmokeyMountain,15)
+
+x <- SmokeyMountain$Easting
+y <- SmokeyMountain$Northing
+z <- SmokeyMountain$Ph
+n <- nrow(SmokeyMountain)
+
+voronoipolygons = function(layer) {
+  crds <- layer@coords
+  z <- deldir(crds[,1], crds[,2])
+  w <- tile.list(z)
+  polys <- vector(mode='list', length=length(w))
+  for (i in seq(along=polys)) {
+    pcrds <- cbind(w[[i]]$x, w[[i]]$y)
+    pcrds <- rbind(pcrds, pcrds[1,])
+    polys[[i]] <- Polygons(list(Polygon(pcrds)),
+                           ID=as.character(i))
+  }
+  SP <- SpatialPolygons(polys)
+  voronoi <- SpatialPolygonsDataFrame(SP, 
+                                      data=data.frame(x=crds[,1], 
+                                                      y=crds[,2], 
+                                                      layer@data,
+                                                      row.names=sapply(slot(SP, 'polygons'), 
+                                                                       function(x) slot(x, 'ID'))))
+  proj4string(voronoi) <- CRS(proj4string(layer))
+  return(voronoi)
+}  
+
+boundbox = matrix( c(0,0,1,1) , nrow=2 ,ncol=2 )
+rownames(boundbox) = c( "x" , "y" )
+colnames(boundbox) = c( "min" , "max" )
+myData.spdf = SpatialPointsDataFrame( cbind(x,y) , data.frame(z) ,
+                            bbox=boundbox )
+proj4string(myData.spdf) = CRS( "+init=epsg:32631" )
+myData.voro = voronoipolygons( myData.spdf )
+tmap_mode( "plot" )
+myData.pt = tm_shape( myData.spdf ) +
+  tm_dots( size=0.2 )
+myData.vr = tm_shape( myData.voro ) +
+  tm_borders( col="blue" ) + 
+  tm_dots( size=0.1 , col="red" ) 
+
+tmap_arrange( myData.vr )
+```
+
+### Figure 1: Nearest Neighbor Method using Voronoi Polygons
+
+Figure 1 shows surrounding Voronoi polygons for points in the SmokeyMountain.csv dataset. The nearest neighbor method creates areas where values are estimated to be the same as the datapoint that is closest. 
+
+
+```{r nearest neighbor interpolation 2, echo=FALSE, message=FALSE}
+
+shades = shading( breaks=seq(2,10,2) , cols=brewer.pal(6,"Reds"))
+tm_shape( myData.voro ) +
+  tm_fill( col='z' , style="fixed" , 
+           breaks=c(3.5, 4.5, 5.1, 5.6, 6.1, 6.6, 7.4, 7.9, 8.5, 9.0) , alpha=0.8 ,
+           title="Soil Samples (pH)" ) +
+  tm_borders( col="black" ) +
+  tm_dots( size=0.1 , col="black" )
+```
+
+### Figure 2: Smokey Mountain Soil pH 
+
+Figure 2 categorizes polygons by the commonly used soil pH classes mentioned before. The figure estimates strongly alkaline (8.5-9.0 pH) soil pH mainly in the northwest areas or polygons. 
+
+
+```{r nearest neighbor interpolation 3, echo=FALSE, message=FALSE}
+
+shades = shading( breaks=seq(2,10,2) , cols=brewer.pal(6,"Reds"))
+tm_shape( myData.voro ) +
+  tm_fill( col='z' , style="fixed" , 
+           breaks=c(0,6,7,9) , alpha=0.8 ,
+           title="Soil Samples (pH)" ) +
+  tm_borders( col="black" ) +
+  tm_dots( size=0.1 , col="black" )
+```
+
+### Figure 3: Smokey Mountain Optimal Soil pH
+
+Generally, the most favorable pH range from plant growth is between 6 to 7. Figure 3, which highlights possible optimal areas, estimates favorable soil for plant growth clustered throughout the Voronoi polygons indicated by the 6 to 7 range color. 
+
+
+\newpage
+
+
+## Inverse distance weighting (alpha = 0.5) 
+
+The next method, inverse distance weighting creates estimates by weighting (inversely related to distance) the average of outcomes from all points.
+
+```{r inverse distance weighting, echo=FALSE, message=FALSE, results=FALSE}
+SmokeyMountain.spdf <- SpatialPointsDataFrame(cbind(SmokeyMountain$Easting,
+                                                     SmokeyMountain$Northing), SmokeyMountain)
+proj4string(SmokeyMountain.spdf) <- CRS("+init=epsg:32631")
+SmokeyMountain.voro <- voronoipolygons(SmokeyMountain.spdf)
+
+s.grid = spsample( SmokeyMountain.voro , type="regular" , n=6000 )
+idw.est = gstat::idw( Ph ~ 1 , SmokeyMountain.spdf , newdata=s.grid , idp=0.5 )
+
+ux = unique( coordinates( idw.est)[,1] )
+uy = unique( coordinates( idw.est)[,2] )
+
+print( c( length(ux) , length(uy) ) )
+length(ux) * length(uy)
+
+predmat1 = matrix( idw.est$var1.pred , length(ux) , length(uy) )
+
+str(predmat1)
+
+par( mfrow=c(1,2) , mar=c(0.1,0.1,1.8,0) )
+persp( predmat1 , box=FALSE , main="IDW with alpha=0.5" )
+
+```
+
+### Figure 4: Inverse Distance Weighting for Smokey Mountain Soil pH
+
+As seen above in Figure 4, there is a corridor or strip of area in which spikes of high estimates for soil pH is seen. Figure 2 estimates also give hints of a trail of soil pH spikes starting from the west to northeast region.
+
+
+\newpage
+
+
+## Kriging 
+
+The last method, kriging uses spatial correlation to get smooth model interpolation.
+
+```{r semivariogram, echo=FALSE, results=FALSE, message=FALSE}
+
+SmokeyMountain.vgm = variogram( Ph~1 , SmokeyMountain.spdf , boundaries=seq(0,200,5) )
+smvgm = fit.variogram( SmokeyMountain.vgm , vgm(0,"Mat",200,5) )
+plot( SmokeyMountain.vgm , model=smvgm )
+
+
+```
+
+### Figure 5: Semivariogram
+
+A semivariogram for the Smokey Mountain dataset is given in Figure 5. Semivariogram estimates are as follows:
+
+* Sill: 0.21
+* Range: 105
+* Nugget: 0.01
+
+The model flattens out around 0.21 semivariance and 105 distance. The nugget where the semivariogram intercepts the y-value is about 0.01. 
+
+
+```{r kriging estimates, echo=FALSE, message=FALSE, results=FALSE, warning=FALSE}
+
+s.grid <- spsample(SmokeyMountain.voro,type='regular',n=6000)
+krig.est = krige( Ph~1 , SmokeyMountain.spdf , newdata=s.grid , model=smvgm )
+krig.grid = SpatialPixelsDataFrame( krig.est , krig.est@data )
+
+levs = seq(6,9,.2)
+krig.map.est = tm_shape( krig.grid ) +
+  tm_raster( col="var1.pred", breaks=levs , title="Smokey Mountains Soil pH" ,
+             palette="Blues" ) +
+  tm_layout( legend.bg.color="white" , legend.frame=TRUE ,
+             legend.position=c("right","bottom") )
+
+var.levels = seq(0,0.4,0.05)
+krig.map.var = tm_shape( krig.grid ) + 
+  tm_raster( col="var1.var" , breaks=var.levels , 
+             title="Estimated Variance" , palette="Blues" ) +
+  tm_layout( legend.bg.color="white" , legend.frame=TRUE ,
+             legend.position=c("right","bottom") )
+
+tmap_arrange(  krig.map.est, krig.map.var )
+```
+
+### Figure 6 (Top): Kriging Estimates for Smokey Mountains Soil pH
+### Figure 7 (Bottom): Estimated Variance for Kriging Estimates of Smokey Mountains Soil pH 
+
+The Kriging estimates for Smokey Mountain Soil pH shown in Figure 6 indicate fanned out clusters of soil with lower pH in central regions. Small areas with very high pH can been seen in the north and west regions. The estimated variance show lowest variation throughout a scattered corridor running from the southwest to the northeast regions. Areas of low variance may indicate spots heavily surveyed. Soil pH estimates are more certain in areas with low estimated variance.
+
+```{r prospective plot, echo=FALSE, message=FALSE}
+
+par( mfrow=c(1,1) )
+ux = unique(coordinates(s.grid)[,1])
+uy = unique(coordinates(s.grid)[,2])
+predmat3 = matrix( krig.est$var1.pred , length(ux) , length(uy) )
+persp( predmat3 , box=FALSE )
+
+```
+
+### Figure 8: Prospective Plot of Smokey Mountain Soil pH
+
+Kriging spikes are different as weights are determined by the semivariogram (unlike inverse distance weighting). This plots still shows highest soil pH in the north and west regions.
+
+```{r contour plot, echo=FALSE, message=FALSE}
+
+par( mfrow=c(1,1) )
+ux = unique(coordinates(s.grid)[,1])
+uy = unique(coordinates(s.grid)[,2])
+predmat3 = matrix( krig.est$var1.pred , length(ux) , length(uy) )
+contour( predmat3 )
+
+```
+
+### Figure 9: Contour Plot of Smokey Mountain Soil pH
+The contour plot shows spiked areas where soil pH is higher (more alkaline) in the north and west.
+
+```{r filled contour plot, echo=FALSE, message=FALSE}
+
+par( mfrow=c(1,1) )
+ux = unique(coordinates(s.grid)[,1])
+uy = unique(coordinates(s.grid)[,2])
+predmat3 = matrix( krig.est$var1.pred , length(ux) , length(uy) )
+filled.contour( predmat3 )
+
+```
+
+### Figure 10: Filled Contour Plot of Smokey Mountain Soil pH
+Again, a filled contour plot shows spiked areas where soil pH is higher in the north and west regions.
+

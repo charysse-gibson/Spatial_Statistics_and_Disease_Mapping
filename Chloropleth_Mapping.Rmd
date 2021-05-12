@@ -1,0 +1,95 @@
+---
+title: 'Infant Deaths and Chlamydia Cases Among Blacks and African Americans in Georgia Counties'
+author: "Charysse Gibson"
+date: "January 27, 2020"
+output: html_document
+---
+
+```{r setup, include=F}
+library(GISTools)
+library(sf)
+library(dplyr)
+library(Hmisc)
+library(tmap)
+```
+
+Chlamydia is a Sexually Transmitted Infection (STI) that can be passed from infected mothers to babies during childbirth. Some complications of the disease in infants include spontaneous abortion, premature birth, conjunctivities, blindness, and pneumonia. For more information, please see the CDC fact sheet in the link below:
+
+[Chalmydia - CDC Fact Sheet] https://www.cdc.gov/std/Chlamydia/STDFact-Chlamydia.htm
+
+In order to better understand the relationship between chalmydia and infant death among Blacks and African Americans in Georgia (USA), data from OASIS (Online Analytical Statistical Information System) for the state of Georgia was downloaded and merged to the Georgia simple features (sf) dataset. Specific measures that were gathered and included were:
+
+- Black or African American Infant Deaths for all counties in Georgia and
+- Black or African American Female Chlamydia Cases for all counties in Georgia
+
+The Simple Features (sf) data includes the original Spatial Data (sp) on the state of Georgia from the GISTools R package. The variables in this dataset also include geographic and demographic information on the state.
+
+## Data Input, Merging, & Management
+
+```{r data}
+data(georgia)
+georgia_sf = st_as_sf(georgia)
+
+black_aa_infant_death <- 
+  read.csv(file='C:/Users/chary/OneDrive/Documents/SLU/Sping 2020/BST 6200 Spatial Statistics and Disease Mapping/Homework/HW1_data/dph_wq_Infant_Deaths_by_Residence__Black_or_African-Ameri_1_27_20_05_17_48_457000_PM.csv',header = FALSE, col.names = c('Name','BlackAA_Infant_Deaths'))
+
+black_aa_female_chlamydia <-
+  read.csv(file='C:/Users/chary/OneDrive/Documents/SLU/Sping 2020/BST 6200 Spatial Statistics and Disease Mapping/Homework/HW1_data/dph_wq_STD_Cases_by_Residence__Chlamydia__Black_or_Africa_1_27_20_05_33_27_661101_PM.csv',header = FALSE, col.names = c('Name','BlackAAFem_STD_Cases'))
+
+georgia_sf2 <- 
+  left_join(georgia_sf, black_aa_infant_death, by="Name")
+georgia_sf2 <- 
+  left_join(georgia_sf2, black_aa_female_chlamydia, by="Name")
+
+# str(georgia_sf2) <-- used to check merged variable structures 
+georgia_sf2$BlackAAFem_STD_Cases <- as.integer(georgia_sf2$BlackAAFem_STD_Cases)
+str(georgia_sf2)
+
+```
+
+## Data descriptions
+
+Descriptive statistics for each of the collected OASIS variables are given below.
+
+```{r infant deaths}
+describe(georgia_sf2$BlackAA_Infant_Deaths)
+```
+
+```{r chlamydia cases}
+describe(georgia_sf2$BlackAAFem_STD_Cases)
+```
+
+## Chloropleth Maps
+
+Chloropleth maps for the previously mentioned variables are given below:
+
+Figure 1. Georgia Infant Deaths among Black or African American
+
+```{r maps}
+
+qtm(georgia_sf2, fill="BlackAA_Infant_Deaths", text="Name", text.size=0.6,
+    format="World_wide", style="classic", 
+    main.title='Figure 1. Georgia Infant Deaths among Black or African American',
+    main.title.size=0.9, text.root=5, fill.title="Infant Deaths",
+    fill.style="fixed",fill.breaks=c(0,25,50,75,100))
+
+qtm(georgia_sf2, fill="BlackAAFem_STD_Cases", text="Name", text.size=0.6,
+    format="World_wide", style="classic", 
+    main.title='Figure 2. Georgia Chlamydia Cases for Black/African American Females',
+    main.title.size=0.9, text.root=5, fill.title="Chlamydia Cases",
+    fill.style="fixed",fill.breaks=c(0,25,50,75,100))
+
+qtm(georgia_sf2, fill="TotPop90", text="Name", text.size=0.6,
+    format="World_wide", style="classic", 
+    main.title='Figure 3. Georgia Counties Population',
+    main.title.size=0.9, text.root=5, fill.title="Population")
+```
+
+## Conclusions
+
+Figure 1 shows Fulton and DeKalb as the counties with the highest numbers of infant deaths among Blacks and African Americans in the state of Georgia. It is important to take into account that the population for these two counties are also the highest in the states as they suround the city of Atlanta--also the most diverse metropolitan area in the state (see Figure 3). 
+
+Figure 2 shows chlamydia cases by county for the state of Georgia. Densities of cases vary throughout the state, regardless of population size, suggesting a relationship between infant deaths and cases of the STI may be influenced more strongly by other factors in the state.
+
+Interesting to note is that the counties Clayton, Cobb, Gwinnett, and Mscogee had between 25 to 50 infant deaths and were in the upper ranges of chlamydia cases, however, the county DeKalb had very few Chalmydia cases (0 to 25) despite having 50 to 75 infant deaths. Further research into differences between these counties can help give insight to the relationship between the two variables.
+

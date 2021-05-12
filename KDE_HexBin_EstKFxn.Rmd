@@ -1,0 +1,233 @@
+---
+title: 'KDE_HexBin_EstKFxn'
+author: "Charysse Gibson"
+date: "February 26, 2020"
+output: pdf_document
+---
+
+```{r setup, include=F}
+library(spatstat)
+library(sf)
+library(sp)
+library(tmaptools)
+library(tmap)
+library(fMultivar)
+library(maptools)
+library(MASS)
+```
+
+# bramblecanes data
+
+**1. Consider the bramblecanes data from class. For each of the three ages of bramble canes (0, 1, or 2) construct the following:**
+
+
+a) a kernel density estimate and display it with a heat map (use trial and error to get an appropriate bin width)
+b) a hexagonal bin plot
+c) an estimate of the K function along with the envelope for testing CSR.
+
+
+### kde heat maps
+```{r bramblecanes kde heat maps, echo=TRUE, results=FALSE}
+## Kernel Density Estimate Heat Maps
+data(bramblecanes)
+str(bramblecanes)
+marks = bramblecanes$marks
+x0 <- bramblecanes$x[bramblecanes$marks==0]
+y0 <- bramblecanes$y[bramblecanes$marks==0]
+x1 <- bramblecanes$x[bramblecanes$marks==1]
+y1 <- bramblecanes$y[bramblecanes$marks==1]
+x2 <- bramblecanes$x[bramblecanes$marks==2]
+y2 <- bramblecanes$y[bramblecanes$marks==2]
+```
+#### Bramble canes 0 yrs
+```{r bramblecanes kde heat maps 0 yrs}
+bc0.kde <- kde2d(x0, y0, 0.3)
+filled.contour(bc0.kde, xlim=c(0,1), ylim=c(0,1), asp=1)
+```
+#### Bramble canes 1 yrs
+```{r bramblecanes kde heat maps 1 yrs}
+bc1.kde <- kde2d(x1, y1, 0.3)
+filled.contour(bc1.kde, xlim=c(0,1), ylim=c(0,1), asp=1 )
+```
+#### Bramble canes 2 yrs
+```{r bramblecanes kde heat maps 2 yrs}
+bc2.kde <- kde2d(x2, y2, 0.3)
+filled.contour(bc2.kde, xlim=c(0,1), ylim=c(0,1), asp=1)
+```
+
+
+### hexagonal binning - 0 years
+
+```{r bramblecanes hex bin yr0, echo=TRUE, results=FALSE}
+## Hexagonal binning
+
+yr0 <- bramblecanes[bramblecanes$marks==0]
+yr0_sp <- as(yr0, Class = 'SpatialPoints')
+
+spdf = yr0_sp
+coordinates(spdf)
+hbins = fMultivar::hexBinning(coordinates(spdf))
+
+hexbin_map = function( spdf , ... )
+{
+  hbins = fMultivar::hexBinning( coordinates(spdf) , ... )
+  u = c( 1 , 0 , -1 , -1 , 0 , 1 )
+  v = c( 1 , 2 , 1 , -1 , -2 , -1 )
+  u = u * min( diff( unique( sort( hbins$x))))
+  v = v * min( diff( unique( sort( hbins$y))))/3
+  hexes_list = vector( length(hbins$x) , mode="list" )
+  for ( i in 1:length(hbins$x) )
+  {
+    pol= Polygon( cbind( u + hbins$x[i] , v + hbins$y[i] ) , 
+                  hole=FALSE )
+    hexes_list[[i]] = Polygons( list( pol) , i )
+  }
+  ## Note error in book for next line (correcet on web site)
+  hex_cover_sp <- SpatialPolygons( hexes_list, 
+                                   proj4string=CRS(proj4string(spdf)))
+  hex_cover <- SpatialPolygonsDataFrame( hex_cover_sp ,
+                       data.frame( z=hbins$z , match.ID=FALSE ) )
+  return( hex_cover )
+}
+
+bc_hex <- hexbin_map(yr0_sp,bins=20)
+bc0 <- 
+  tm_shape(bc_hex) +
+  tm_layout(main.title='bramble canes 0 yrs') +
+  tm_fill(col="z", legend.z=0, title="Count", style='fixed', breaks=1:8, alpha=0.7)
+```
+
+### hexagonal binning - 1 years
+
+```{r bramblecanes hex bin yr1, echo=TRUE, results=FALSE}
+## Hexagonal binning
+
+yr1 <- bramblecanes[bramblecanes$marks==1]
+yr1_sp <- as(yr1, Class = 'SpatialPoints')
+
+spdf = yr1_sp
+coordinates(spdf)
+hbins = fMultivar::hexBinning(coordinates(spdf))
+
+hexbin_map = function( spdf , ... )
+{
+  hbins = fMultivar::hexBinning( coordinates(spdf) , ... )
+  u = c( 1 , 0 , -1 , -1 , 0 , 1 )
+  v = c( 1 , 2 , 1 , -1 , -2 , -1 )
+  u = u * min( diff( unique( sort( hbins$x))))
+  v = v * min( diff( unique( sort( hbins$y))))/3
+  hexes_list = vector( length(hbins$x) , mode="list" )
+  for ( i in 1:length(hbins$x) )
+  {
+    pol= Polygon( cbind( u + hbins$x[i] , v + hbins$y[i] ) , 
+                  hole=FALSE )
+    hexes_list[[i]] = Polygons( list( pol) , i )
+  }
+  ## Note error in book for next line (correcet on web site)
+  hex_cover_sp <- SpatialPolygons( hexes_list, 
+                                   proj4string=CRS(proj4string(spdf)))
+  hex_cover <- SpatialPolygonsDataFrame( hex_cover_sp ,
+                       data.frame( z=hbins$z , match.ID=FALSE ) )
+  return( hex_cover )
+}
+
+bc_hex <- hexbin_map(yr1_sp,bins=20)
+bc1 <- 
+  tm_shape(bc_hex) +
+  tm_layout(main.title='bramble canes 1 yrs') +
+  tm_fill(col="z", legend.z=0, title="Count", style='fixed', breaks=1:8, alpha=0.7)
+```
+
+### hexagonal binning - 2 years
+
+```{r bramblecanes hex bin yr2, echo=TRUE, results=FALSE}
+## Hexagonal binning
+
+yr2 <- bramblecanes[bramblecanes$marks==2]
+yr2_sp <- as(yr2, Class = 'SpatialPoints')
+
+spdf = yr2_sp
+coordinates(spdf)
+hbins = fMultivar::hexBinning(coordinates(spdf))
+
+hexbin_map = function( spdf , ... )
+{
+  hbins = fMultivar::hexBinning( coordinates(spdf) , ... )
+  u = c( 1 , 0 , -1 , -1 , 0 , 1 )
+  v = c( 1 , 2 , 1 , -1 , -2 , -1 )
+  u = u * min( diff( unique( sort( hbins$x))))
+  v = v * min( diff( unique( sort( hbins$y))))/3
+  hexes_list = vector( length(hbins$x) , mode="list" )
+  for ( i in 1:length(hbins$x) )
+  {
+    pol= Polygon( cbind( u + hbins$x[i] , v + hbins$y[i] ) , 
+                  hole=FALSE )
+    hexes_list[[i]] = Polygons( list( pol) , i )
+  }
+  ## Note error in book for next line (correcet on web site)
+  hex_cover_sp <- SpatialPolygons( hexes_list, 
+                                   proj4string=CRS(proj4string(spdf)))
+  hex_cover <- SpatialPolygonsDataFrame( hex_cover_sp ,
+                       data.frame( z=hbins$z , match.ID=FALSE ) )
+  return( hex_cover )
+}
+
+bc_hex <- hexbin_map(yr2_sp,bins=20)
+bc2 <- 
+  tm_shape(bc_hex) +
+  tm_layout(main.title='bramble canes 2 yrs') +
+  tm_fill(col="z", legend.z=0, title="Count", style='fixed', breaks=1:8, alpha=0.7)
+```
+
+```{r bramblecanes hex bins, warning=FALSE}
+tmap_mode("plot")
+tmap_arrange(bc0,bc1,bc2)
+```
+
+### k function estimate and envelope for testing CSR
+
+```{R kf env CSR testing, echo=TRUE, results=FALSE}
+kf.env.yr0 <- envelope(yr0, Kest, correction="border")
+kf.env.yr1 <- envelope(yr1, Kest, correction="border")
+kf.env.yr2 <- envelope(yr2, Kest, correction="border")
+
+plot(kf.env.yr0)
+plot(kf.env.yr1)
+plot(kf.env.yr2)
+```
+
+# trees
+
+**2. Consider the location of trees in the trees.csv data set given on Blackboard.**
+
+
+a) Create a ppp object that has region [0,200] by [0,200].
+b) The tree diameters are given in the variable dia. Make a histogram for the tree diameters.
+c) Construct a kernel density and display it with a heat map.
+d) ~~Display the kernel density with a set of contours.~~
+e) Estimate the K function and plot it along with the envelope for testing CSR.
+f) Consider only the trees with diameter less than or equal to 20. Repeat part (e).
+
+```{r trees,  echo=TRUE, results=FALSE, warning=FALSE}
+trees <- 
+  read.csv("C:/Users/chary/OneDrive/Documents/SLU/Sping 2020/BST 6200 Spatial Statistics and Disease Mapping/Homework/HW2_data/trees.csv")
+
+trees_ppp <- ppp(trees$x, trees$y, c(0,200), c(0,200))
+
+hist(trees$dia)
+
+trees_sp <- as.SpatialPoints.ppp(trees_ppp)
+my_bw = 1 * c(1,1)
+trees_dens = smooth_map(trees_sp, unit='feet', unit.size=12,
+                        bandwidth = my_bw)
+tm_shape(trees_dens$raster) + 
+  tm_raster()
+
+kf.env.trees <- envelope(trees_ppp, Kest, correction="border")
+plot(kf.env.trees)
+
+trees_LE20 <- trees[trees$dia<=20,]
+trees_LE20_ppp <- ppp(trees_LE20$x, trees_LE20$y, c(0,200), c(0,200))
+kf.env.treesLE20 <- envelope(trees_LE20_ppp, Kest, correction="border")
+plot(kf.env.treesLE20)
+```
