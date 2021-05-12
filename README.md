@@ -1,2 +1,2 @@
-# Spatial_Statistics_and_Disease_Mapping
+# Spatial Statistics and Disease Mapping
 Code for various spatial statistics analyses and disease mapping data visualization.
